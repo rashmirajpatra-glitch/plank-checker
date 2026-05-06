@@ -10,38 +10,34 @@ import urllib.request
 
 SKIP_FRAMES = 3
 
-def calculate_angle(p1, p2):
-    dx = p2.x - p1.x
-    dy = p2.y - p1.y
-    angle = abs(math.degrees(math.atan2(dy, dx)))
+def calculate_angle_three_points(a, b, c):
+    ax, ay = a.x - b.x, a.y - b.y
+    cx, cy = c.x - b.x, c.y - b.y
+    dot = ax * cx + ay * cy
+    mag = (math.sqrt(ax**2 + ay**2)) * (math.sqrt(cx**2 + cy**2))
+    if mag == 0:
+        return 0
+    angle = math.degrees(math.acos(max(-1, min(1, dot / mag))))
     return angle
 
 def check_plank_form(landmarks):
-    left_hip      = landmarks[23]
-    right_hip     = landmarks[24]
-    left_shoulder = landmarks[11]
-    right_shoulder= landmarks[12]
-    left_ankle    = landmarks[27]
-    right_ankle   = landmarks[28]
+    shoulder = landmarks[11]
+    hip      = landmarks[23]
+    ankle    = landmarks[27]
 
-    hip_angle      = calculate_angle(left_hip, right_hip)
-    shoulder_angle = calculate_angle(left_shoulder, right_shoulder)
-    ankle_angle    = calculate_angle(left_ankle, right_ankle)
+    body_angle = calculate_angle_three_points(shoulder, hip, ankle)
 
-    feedback = []
+    feedback  = []
     good_form = True
 
-    if hip_angle > 15:
-        feedback.append("Hips are not level — check your hip alignment")
+    if body_angle < 140:
+        if body_angle < 110:
+            feedback.append(f"Hips too high — bring them down (body angle: {body_angle:.1f}°)")
+        else:
+            feedback.append(f"Body not straight — adjust your hips (body angle: {body_angle:.1f}°)")
         good_form = False
-    if shoulder_angle > 15:
-        feedback.append("Shoulders are tilting — keep them even")
-        good_form = False
-    if ankle_angle > 15:
-        feedback.append("Ankles are not level — adjust your feet")
-        good_form = False
-    if good_form:
-        feedback.append("Great form! Hold it!")
+    else:
+        feedback.append(f"Great form! Body angle: {body_angle:.1f}° — Hold it!")
 
     return good_form, feedback
 
@@ -66,7 +62,6 @@ def draw_landmarks_on_frame(frame, landmarks):
 st.title("Plank Timer + Form Checker")
 st.write("Upload a short plank video (under 15 seconds for best speed).")
 
-# Download pose model if not already present
 model_path = "pose_landmarker.task"
 if not os.path.exists(model_path):
     with st.spinner("Downloading pose model (one time only)..."):
@@ -99,10 +94,10 @@ if uploaded_file is not None:
     good_frames     = 0
     total_frames    = 0
 
-    base_options    = python.BaseOptions(model_asset_path=model_path)
-    options         = vision.PoseLandmarkerOptions(
-                        base_options=base_options,
-                        output_segmentation_masks=False)
+    base_options = python.BaseOptions(model_asset_path=model_path)
+    options      = vision.PoseLandmarkerOptions(
+                     base_options=base_options,
+                     output_segmentation_masks=False)
 
     with vision.PoseLandmarker.create_from_options(options) as landmarker:
         while cap.isOpened():
@@ -117,9 +112,9 @@ if uploaded_file is not None:
             if total_frames % SKIP_FRAMES != 0:
                 continue
 
-            rgb_frame  = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            mp_image   = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-            result     = landmarker.detect(mp_image)
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image  = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+            result    = landmarker.detect(mp_image)
 
             if result.pose_landmarks and len(result.pose_landmarks) > 0:
                 landmarks = result.pose_landmarks[0]
@@ -142,7 +137,11 @@ if uploaded_file is not None:
             else:
                 feedback_box.warning("No pose detected — make sure your full body is visible")
 
-            stframe.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB", use_column_width=True)
+            stframe.image(
+                cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
+                channels="RGB",
+                width=600
+            )
 
     cap.release()
     os.unlink(tfile.name)
